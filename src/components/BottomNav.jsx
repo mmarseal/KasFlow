@@ -3,9 +3,9 @@ import { BookOpen, ChefHat, LayoutDashboard, PlusCircle } from "lucide-react";
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Beranda" },
-  { to: "/catat", icon: PlusCircle, label: "Catat" },
+  { to: "/catat", icon: PlusCircle, label: "Catat Transaksi" },
   { to: "/riwayat", icon: BookOpen, label: "Riwayat" },
-  { to: "/rekap", icon: ChefHat, label: "Rekap" },
+  { to: "/rekap", icon: ChefHat, label: "Rekap Menu" },
 ];
 
 export default function BottomNav() {
