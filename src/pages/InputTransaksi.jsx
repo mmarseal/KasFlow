@@ -41,6 +41,7 @@ export default function InputTransaksi() {
     if (!["income", "expense"].includes(form.type)) return setStatus({ type: "error", msg: "Pilih jenis transaksi dulu." });
     if (!form.amount || !Number.isFinite(Number(form.amount)) || Number(form.amount) <= 0) return setStatus({ type: "error", msg: "Nominal harus lebih dari 0." });
     if (form.type === "expense" && !form.category) return setStatus({ type: "error", msg: "Pilih kategori pengeluaran." });
+    if (form.type === "expense" && !["cash", "qris"].includes(form.payment_method)) return setStatus({ type: "error", msg: "Pilih metode pembayaran (Cash/QRIS)." });
     const [year, month, day] = (form.transaction_date || "").split("-").map(Number);
     const parsedDate = new Date(Date.UTC(year, month - 1, day));
     if (!/^\d{4}-\d{2}-\d{2}$/.test(form.transaction_date || "") || parsedDate.getUTCFullYear() !== year || parsedDate.getUTCMonth() + 1 !== month || parsedDate.getUTCDate() !== day) return setStatus({ type: "error", msg: "Tanggal transaksi tidak valid." });
@@ -49,7 +50,7 @@ export default function InputTransaksi() {
 
     setLoading(true);
     setStatus(null);
-    const payload = { business_id: business.id, type: form.type, amount: Number(form.amount), category: form.type === "expense" ? form.category : null, payment_method: form.type === "income" ? form.payment_method : null, note: form.note || null, transaction_date: form.transaction_date };
+    const payload = { business_id: business.id, type: form.type, amount: Number(form.amount), category: form.type === "expense" ? form.category : null, payment_method: form.payment_method, note: form.note || null, transaction_date: form.transaction_date };
     let result;
     try {
       result = transaction?.id
@@ -108,10 +109,18 @@ export default function InputTransaksi() {
                 </div>
               </fieldset>
             ) : (
-              <div>
-                <label className={labelClass} htmlFor="transaction-category">Kategori Pengeluaran</label>
-                <select id="transaction-category" value={form.category} onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))} className={fieldClass}><option value="">Pilih kategori</option>{KATEGORI.map((category) => <option key={category}>{category}</option>)}</select>
-              </div>
+              <>
+                <div>
+                  <label className={labelClass} htmlFor="transaction-category">Kategori Pengeluaran</label>
+                  <select id="transaction-category" value={form.category} onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))} className={fieldClass}><option value="">Pilih kategori</option>{KATEGORI.map((category) => <option key={category}>{category}</option>)}</select>
+                </div>
+                <fieldset>
+                  <legend className={labelClass}>Metode Pembayaran</legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[{ value: "cash", label: "Cash", Icon: Wallet }, { value: "qris", label: "QRIS", Icon: QrCode }].map(({ value, label, Icon }) => <button type="button" key={value} aria-pressed={form.payment_method === value} onClick={() => setForm((prev) => ({ ...prev, payment_method: value }))} className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-[var(--kf-radius-md)] border px-3 text-sm font-semibold transition sm:px-4 sm:text-base ${form.payment_method === value ? "border-[var(--kf-accent)] bg-[var(--kf-accent-soft)] text-[var(--kf-accent-hover)] ring-1 ring-[var(--kf-accent)]" : "border-[var(--kf-border)] bg-white text-[var(--kf-text-muted)] hover:bg-[var(--kf-surface-soft)]"}`}><Icon size={18} aria-hidden="true" />{label}</button>)}
+                  </div>
+                </fieldset>
+              </>
             )}
 
             <div>
