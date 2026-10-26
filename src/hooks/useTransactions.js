@@ -21,7 +21,7 @@ function getDateRange(range) {
 
 /**
  * Hook untuk fetch dan manage data transaksi
- * @param {'today' | 'week' | 'month' | '7days'} range - periode data
+ * @param {'today' | 'week' | 'month' | '7days' | 'recent'} range - periode data
  */
 export function useTransactions(range = 'today') {
   const { business } = useAuth()
@@ -35,18 +35,22 @@ export function useTransactions(range = 'today') {
     if (!businessId) return undefined
 
     let active = true
+    const isRecent = range === 'recent'
     const { start, end } = getDateRange(range)
 
     async function loadTransactions() {
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from('transactions')
           .select('*')
           .eq('business_id', businessId)
-          .gte('transaction_date', start)
-          .lte('transaction_date', end)
           .order('transaction_date', { ascending: false })
           .order('created_at', { ascending: false })
+
+        if (!isRecent) query = query.gte('transaction_date', start).lte('transaction_date', end)
+        if (isRecent) query = query.limit(4)
+
+        const { data, error } = await query
 
         if (!active) return
         setResult({
