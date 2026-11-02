@@ -86,6 +86,42 @@ a:focus-visible {
   -webkit-backdrop-filter: blur(10px);
 }
 
+.app-header {
+  isolation: isolate;
+}
+
+.app-header::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  content: "";
+  pointer-events: none;
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, backdrop-filter 180ms ease;
+}
+
+.app-header.is-scrolled::before {
+  border-bottom-color: rgb(226 233 230 / 72%);
+  background: rgb(245 247 246 / 78%);
+  box-shadow: 0 5px 18px rgb(25 47 40 / 5%);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app-header.is-scrolled::before {
+    background: rgb(245 247 246 / 96%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-header::before {
+    transition: none;
+  }
+}
+
 @keyframes mobile-navigation-enter {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }

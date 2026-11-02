@@ -26,6 +26,7 @@ export default function AppHeader({ user, businessName, period, setPeriod, onLog
   const [searchTerm, setSearchTerm] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(() => window.scrollY > 8);
   const [drawerPhase, setDrawerPhase] = useState("closed");
   const drawerPhaseRef = useRef("closed");
   const pendingDrawerTransitionsRef = useRef(new Set());
@@ -65,6 +66,13 @@ export default function AppHeader({ user, businessName, period, setPeriod, onLog
   const drawerOpen = drawerPhase === "opening" || drawerPhase === "open";
 
   useEffect(() => {
+    const updateScrollState = () => setIsScrolled(window.scrollY > 8);
+    updateScrollState();
+    window.addEventListener("scroll", updateScrollState, { passive: true });
+    return () => window.removeEventListener("scroll", updateScrollState);
+  }, []);
+
+  useEffect(() => {
     function focusAppSearch(event) {
       const target = event.target;
       const isTyping = target instanceof HTMLElement && (
@@ -98,7 +106,7 @@ export default function AppHeader({ user, businessName, period, setPeriod, onLog
 
   return (
     <>
-    <header className={`sticky top-0 z-30 ${mobileSearchOpen ? "max-md:z-[60]" : ""}`}>
+    <header className={`app-header sticky top-0 z-30 ${isScrolled ? "is-scrolled" : ""} ${mobileSearchOpen ? "max-md:z-[60]" : ""}`}>
       <div className="mx-auto grid w-full max-w-[88rem] grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-1 px-3 py-3 sm:px-6 md:grid-cols-1 md:items-center md:gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:px-8">
         <div className="flex h-12 min-w-0 items-center md:hidden">
           <img src="/assets/kasflow-logo-horizontal.png" alt="KasFlow" className="h-8 w-auto max-w-[5.5rem] object-contain" />
