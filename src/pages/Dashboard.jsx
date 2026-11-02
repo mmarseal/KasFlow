@@ -81,13 +81,13 @@ function CashFlowTooltip({ active, payload }) {
   const dateLabel = date === endDate ? longDate(date) : `${longDate(date)} – ${longDate(endDate)}`;
 
   return (
-    <div className="max-w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-[var(--kf-border)] bg-white/95 px-3 py-2 shadow-[var(--kf-shadow-md)] backdrop-blur-sm">
-      <p className="mb-1.5 text-xs font-semibold text-[var(--kf-text)]">{dateLabel}</p>
-      <div className="flex flex-col gap-1">
+    <div className="max-w-[min(11rem,calc(100vw-2rem))] rounded-lg border border-[var(--kf-border)] bg-white/95 px-2 py-1.5 shadow-[var(--kf-shadow-md)] backdrop-blur-sm sm:max-w-[min(18rem,calc(100vw-2rem))] sm:rounded-xl sm:px-3 sm:py-2">
+      <p className="mb-1 break-words text-[10px] font-semibold leading-4 text-[var(--kf-text)] sm:mb-1.5 sm:text-xs sm:leading-normal">{dateLabel}</p>
+      <div className="flex min-w-0 flex-col gap-0.5 sm:gap-1">
         {payload.map(({ name, value, color }) => (
-          <div key={name} className="flex items-center justify-between gap-4 text-xs">
-            <span className="flex items-center gap-1.5 text-[var(--kf-text-muted)]"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />{name}</span>
-            <span className="font-semibold tabular-nums text-[var(--kf-text)]">{formatRupiah(value)}</span>
+          <div key={name} className="flex min-w-0 items-center justify-between gap-2 text-[10px] leading-4 sm:gap-4 sm:text-xs sm:leading-normal">
+            <span className="flex min-w-0 items-center gap-1 text-[var(--kf-text-muted)] sm:gap-1.5"><span className="h-1.5 w-1.5 shrink-0 rounded-full sm:h-2 sm:w-2" style={{ backgroundColor: color }} />{name}</span>
+            <span className="shrink-0 font-semibold tabular-nums text-[var(--kf-text)]">{formatRupiah(value)}</span>
           </div>
         ))}
       </div>
@@ -134,6 +134,8 @@ export default function Dashboard() {
   const userName = user?.user_metadata?.nama || user?.email?.split("@")[0] || "";
   const profileName = userName || "Pengguna";
   const [refreshToken, setRefreshToken] = useState(0);
+  const [isMobileChart, setIsMobileChart] = useState(() => window.matchMedia("(max-width: 639px)").matches);
+  const [isTouchChart, setIsTouchChart] = useState(() => window.matchMedia("(pointer: coarse)").matches);
   const [result, setResult] = useState({ key: null, transactions: [], recentTransactions: [], periodError: null, recentError: null });
   const now = new Date();
   const currentHour = Number(jakartaParts(now).hour);
@@ -147,6 +149,22 @@ export default function Dashboard() {
   const dateRange = getJakartaDashboardDateRange(period, now);
   const queryStartDate = dateRange.start;
   const key = JSON.stringify([businessId, period, dateRange.start, dateRange.end, refreshToken]);
+
+  useEffect(() => {
+    const mobileQuery = window.matchMedia("(max-width: 639px)");
+    const touchQuery = window.matchMedia("(pointer: coarse)");
+    const updateChartViewport = () => {
+      setIsMobileChart(mobileQuery.matches);
+      setIsTouchChart(touchQuery.matches);
+    };
+    updateChartViewport();
+    mobileQuery.addEventListener("change", updateChartViewport);
+    touchQuery.addEventListener("change", updateChartViewport);
+    return () => {
+      mobileQuery.removeEventListener("change", updateChartViewport);
+      touchQuery.removeEventListener("change", updateChartViewport);
+    };
+  }, []);
 
   useEffect(() => {
     if (!businessId) return undefined;
@@ -220,10 +238,14 @@ export default function Dashboard() {
       date: start,
       endDate: end,
       hari: bucketLabel,
+      labelMobile: shortDate(start),
       Pemasukan: bucketIncome,
       Pengeluaran: bucketExpense,
     };
   });
+  const mobileChartTicks = Array.from(new Set([0, Math.round((chartData.length - 1) / 3), Math.round(2 * (chartData.length - 1) / 3), chartData.length - 1]))
+    .map((index) => chartData[index]?.labelMobile)
+    .filter(Boolean);
   const recentTransactions = current?.recentTransactions ?? [];
   const refresh = () => setRefreshToken((token) => token + 1);
   const openInput = (type) => navigate("/catat", { state: { type, from: location.pathname } });
@@ -273,14 +295,14 @@ export default function Dashboard() {
               <p className="mt-1 text-sm text-[var(--kf-text-muted)]">Arus kas periode ini akan muncul setelah transaksi dicatat.</p>
             </div>
           ) : (
-            <div className="h-56 w-full min-w-0" role="img" aria-label={`Grafik pemasukan dan pengeluaran ${chartSubtitle}`}>
+            <div className="h-60 w-full min-w-0 sm:h-56" role="img" aria-label={`Grafik pemasukan dan pengeluaran ${chartSubtitle}`}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} barGap={3} margin={{ top: 4, right: 4, left: 6, bottom: 6 }}>
+                <BarChart data={chartData} barGap={3} margin={{ top: 4, right: isMobileChart ? 0 : 4, left: isMobileChart ? 0 : 6, bottom: isMobileChart ? 2 : 6 }}>
                   <CartesianGrid vertical={false} stroke="#edf1ef" />
-                  <XAxis dataKey="hari" interval={period === "3months" ? 1 : period === "month" ? 3 : 0} minTickGap={period === "3months" ? 8 : 12} tickMargin={8} tick={{ fontSize: period === "3months" ? 10 : 12, fill: "#77837f" }} axisLine={false} tickLine={false} />
-                  <YAxis domain={[0, (dataMax) => dataMax > 0 ? Math.ceil(dataMax * 1.1) : 1]} tickCount={4} allowDecimals={false} tick={{ fontSize: 11, fill: "#77837f" }} axisLine={false} tickLine={false} tickFormatter={formatAxisAmount} width={68} />
-                  <Tooltip content={<CashFlowTooltip />} offset={8} wrapperStyle={{ outline: "none", zIndex: 20 }} />
-                  <Legend verticalAlign="bottom" iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, paddingTop: 4 }} />
+                  <XAxis dataKey={isMobileChart ? "labelMobile" : "hari"} ticks={isMobileChart ? mobileChartTicks : undefined} interval={isMobileChart ? 0 : period === "3months" ? 1 : period === "month" ? 3 : 0} minTickGap={isMobileChart ? 6 : 12} tickMargin={isMobileChart ? 6 : 8} tick={{ fontSize: isMobileChart ? 10 : period === "3months" ? 10 : 12, fill: "#77837f" }} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, (dataMax) => dataMax > 0 ? Math.ceil(dataMax * 1.1) : 1]} tickCount={4} allowDecimals={false} tick={{ fontSize: isMobileChart ? 10 : 11, fill: "#77837f" }} axisLine={false} tickLine={false} tickFormatter={formatAxisAmount} width={isMobileChart ? 50 : 68} />
+                  <Tooltip content={<CashFlowTooltip />} trigger={isTouchChart ? "click" : "hover"} offset={6} allowEscapeViewBox={{ x: false, y: false }} cursor={isMobileChart ? { fill: "rgba(8, 127, 104, 0.055)" } : undefined} wrapperStyle={{ outline: "none", zIndex: 20 }} />
+                  <Legend align="center" verticalAlign="bottom" layout="horizontal" iconType={isMobileChart ? "circle" : "rect"} iconSize={isMobileChart ? 7 : 14} wrapperStyle={{ display: "flex", justifyContent: "center", whiteSpace: "nowrap", fontSize: isMobileChart ? 10 : 13, paddingTop: isMobileChart ? 2 : 8 }} />
                   <Bar dataKey="Pemasukan" fill="#0f8b70" radius={[5, 5, 0, 0]} maxBarSize={26} />
                   <Bar dataKey="Pengeluaran" fill="#d26464" radius={[5, 5, 0, 0]} maxBarSize={26} />
                 </BarChart>
