@@ -1,252 +1,94 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { useAuth } from "../context/useAuth";
 import { formatRupiah } from "../utils/formatCurrency";
+import { parseLocalDate } from "../utils/dateUtils";
 import { useTransactions } from "../hooks/useTransactions";
-import {
-  TrendingUp,
-  TrendingDown,
-  Trash2,
-  AlertCircle,
-  Wallet,
-  QrCode,
-} from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, BookOpen, Pencil, Plus, Search, Trash2 } from "lucide-react";
 
-const FILTER = [
-  { label: "Hari Ini", value: "today" },
-  { label: "Minggu Ini", value: "week" },
-  { label: "Bulan Ini", value: "month" },
-];
-
-function groupByDate(transactions) {
-  return transactions.reduce((groups, tx) => {
-    const date = tx.transaction_date;
-    if (!groups[date]) groups[date] = [];
-    groups[date].push(tx);
-    return groups;
-  }, {});
-}
-
-function formatTanggalGrup(dateStr) {
-  return new Date(dateStr + "T00:00:00").toLocaleDateString("id-ID", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-}
+const FILTER = [{ label: "Hari Ini", value: "today" }, { label: "7 Hari Terakhir", value: "7days" }, { label: "Bulan Ini", value: "month" }];
+const TYPE_FILTER = [{ label: "Semua", value: "all" }, { label: "Pemasukan", value: "income" }, { label: "Pengeluaran", value: "expense" }];
+const dateLabel = (date) => parseLocalDate(date).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const paymentLabel = (method) => method === "cash" ? "Tunai" : method === "qris" ? "QRIS" : "—";
 
 export default function BukuKas() {
+  const { business } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [filter, setFilter] = useState("today");
-  const [deleteId, setDeleteId] = useState(null);
-  const { transactions, loading, summary, refetch } = useTransactions(filter);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [deleteSelection, setDeleteSelection] = useState({ businessId: null, id: null });
+  const [deleteError, setDeleteError] = useState("");
+  const [notice, setNotice] = useState(location.state?.notice || "");
+  const { transactions, loading, summary, error, refetch } = useTransactions(filter);
+  const deleteId = business?.id && deleteSelection.businessId === business.id ? deleteSelection.id : null;
+  const filtered = useMemo(() => transactions.filter((tx) => {
+    const matchesType = typeFilter === "all" || tx.type === typeFilter;
+    const haystack = `${tx.note || ""} ${tx.category || ""} ${tx.payment_method || ""} ${tx.type}`.toLowerCase();
+    return matchesType && haystack.includes(search.trim().toLowerCase());
+  }), [transactions, typeFilter, search]);
+  const dates = useMemo(() => [...new Set(filtered.map((tx) => tx.transaction_date))].sort((a, b) => b.localeCompare(a)), [filtered]);
 
   async function handleDelete(id) {
-    await supabase.from("transactions").delete().eq("id", id);
+    if (!business?.id || !id) return;
+    setDeleteError("");
+    const { data, error: deleteFailure } = await supabase.from("transactions").delete().eq("business_id", business.id).eq("id", id).select("id").maybeSingle();
+    if (deleteFailure || !data) {
+      setDeleteError(deleteFailure ? "Transaksi gagal dihapus. Coba lagi." : "Transaksi tidak ditemukan atau sudah dihapus.");
+      return;
+    }
+    setDeleteSelection({ businessId: business.id, id: null });
     refetch();
-    setDeleteId(null);
   }
 
-  const grouped = groupByDate(transactions);
-  const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
-
   return (
-    <div className="flex flex-col min-h-full">
-      {/* Header */}
-      <div className="bg-green-600 px-4 pt-10 pb-6 md:hidden">
-        <h1 className="text-white text-2xl font-bold">Buku Kas</h1>
-        <p className="text-green-100 text-sm mt-1">Riwayat transaksi</p>
-      </div>
+    <div className="mx-auto flex max-w-7xl flex-col gap-4 pb-5 md:gap-5">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div><p className="text-sm font-medium text-[var(--kf-text-muted)]">Catatan keuangan usaha</p><h1 className="mt-1 text-2xl font-bold tracking-tight text-[var(--kf-text)] sm:text-3xl">Riwayat Transaksi</h1><p className="mt-1 text-sm text-[var(--kf-text-muted)]">Tinjau, cari, dan kelola transaksi bisnis Anda.</p></div>
+        <button type="button" onClick={() => navigate("/catat")} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[var(--kf-radius-md)] bg-[var(--kf-accent)] px-4 text-sm font-semibold text-white shadow-sm hover:bg-[var(--kf-accent-hover)]"><Plus size={18} /> Catat Transaksi</button>
+      </header>
 
-      <div className="px-4 -mt-4 flex flex-col gap-3 pb-8">
-        {/* Filter Tab */}
-        <div className="bg-white rounded-2xl p-1.5 shadow-sm border border-gray-100 flex gap-1">
-          {FILTER.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setFilter(f.value)}
-              className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                filter === f.value
-                  ? "bg-green-600 text-white shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+      {notice && <div role="status" className="rounded-[var(--kf-radius-md)] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{notice}<button onClick={() => setNotice("")} className="ml-3 underline">Tutup</button></div>}
+
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Ringkasan transaksi">
+        {[{ label: "Pemasukan", value: summary.totalIncome, tone: "text-emerald-700" }, { label: "Pengeluaran", value: summary.totalExpense, tone: "text-rose-700" }, { label: "Selisih Bersih", value: summary.selisihBersih, tone: "text-teal-800" }].map((item) => <article key={item.label} className="rounded-[var(--kf-radius-lg)] border border-[var(--kf-border)] bg-white p-4 shadow-sm"><p className="text-sm font-medium text-[var(--kf-text-muted)]">{item.label}</p><p className={`mt-1 text-xl font-bold ${item.tone}`}>{formatRupiah(item.value)}</p></article>)}
+      </section>
+
+      <section className="rounded-[var(--kf-radius-lg)] border border-[var(--kf-border)] bg-white p-3 shadow-sm sm:p-4" aria-label="Filter transaksi">
+        <div className="grid grid-cols-3 rounded-[var(--kf-radius-md)] bg-[var(--kf-surface-soft)] p-1 sm:inline-grid sm:min-w-[27rem]">
+          {FILTER.map((item) => <button key={item.value} aria-pressed={filter === item.value} onClick={() => setFilter(item.value)} className={`min-h-11 rounded-[var(--kf-radius-sm)] px-2 text-xs font-semibold sm:px-4 sm:text-sm ${filter === item.value ? "bg-white text-[var(--kf-accent-hover)] shadow-sm" : "text-[var(--kf-text-muted)]"}`}>{item.label}</button>)}
         </div>
-
-        {/* Ringkasan */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Pemasukan</p>
-              <p className="text-green-600 font-bold text-sm">
-                {formatRupiah(summary.totalIncome)}
-              </p>
-            </div>
-            <div className="border-x border-gray-100">
-              <p className="text-xs text-gray-500 mb-1">Pengeluaran</p>
-              <p className="text-red-500 font-bold text-sm">
-                {formatRupiah(summary.totalExpense)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Laba Bersih</p>
-              <p
-                className={`font-bold text-sm ${summary.laba >= 0 ? "text-green-600" : "text-red-500"}`}
-              >
-                {formatRupiah(summary.laba)}
-              </p>
-            </div>
-          </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <label className="relative"><span className="sr-only">Cari transaksi</span><Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--kf-text-subtle)]" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari kategori atau catatan" className="min-h-12 w-full rounded-[var(--kf-radius-md)] border border-[var(--kf-border)] bg-white pl-10 pr-3 text-base outline-none focus:border-[var(--kf-accent)]" /></label>
+          <div className="grid grid-cols-3 rounded-[var(--kf-radius-md)] border border-[var(--kf-border)] p-1">{TYPE_FILTER.map((item) => <button key={item.value} aria-pressed={typeFilter === item.value} onClick={() => setTypeFilter(item.value)} className={`min-h-10 rounded-[var(--kf-radius-sm)] px-2 text-xs font-semibold ${typeFilter === item.value ? "bg-[var(--kf-accent-soft)] text-[var(--kf-accent-hover)]" : "text-[var(--kf-text-muted)]"}`}>{item.label}</button>)}</div>
         </div>
+        <p className="mt-2 text-xs text-[var(--kf-text-muted)]">Menampilkan {filter === "today" ? "hari ini" : filter === "7days" ? "7 hari terakhir" : "bulan ini"} · {filtered.length} transaksi</p>
+      </section>
 
-        {/* Breakdown Cash vs QRIS */}
-        {(() => {
-          const cashTotal = transactions
-            .filter((t) => t.type === "income" && t.payment_method === "cash")
-            .reduce((s, t) => s + Number(t.amount), 0);
-          const qrisTotal = transactions
-            .filter((t) => t.type === "income" && t.payment_method === "qris")
-            .reduce((s, t) => s + Number(t.amount), 0);
-
-          if (cashTotal === 0 && qrisTotal === 0) return null;
-
-          return (
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                Sumber Pemasukan
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-center gap-3 bg-green-50 rounded-xl p-3">
-                  <div className="bg-green-100 p-2 rounded-lg">
-                    <Wallet size={18} className="text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Cash</p>
-                    <p className="text-sm font-bold text-green-600">
-                      {formatRupiah(cashTotal)}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 bg-blue-50 rounded-xl p-3">
-                  <div className="bg-blue-100 p-2 rounded-lg">
-                    <QrCode size={18} className="text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">QRIS</p>
-                    <p className="text-sm font-bold text-blue-600">
-                      {formatRupiah(qrisTotal)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* List Transaksi */}
-        {loading ? (
-          <div className="flex flex-col gap-2">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
-              >
-                <div className="h-4 bg-gray-100 rounded animate-pulse w-1/3 mb-2" />
-                <div className="h-6 bg-gray-100 rounded animate-pulse w-1/2" />
-              </div>
-            ))}
+      {deleteError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{deleteError}</p>}
+      {error && <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">Gagal memuat transaksi.<button onClick={refetch} className="min-h-10 rounded-lg px-3 font-semibold">Coba lagi</button></div>}
+      {loading ? <div className="space-y-3">{[1, 2, 3].map((n) => <div key={n} className="h-20 animate-pulse rounded-[var(--kf-radius-lg)] bg-white shadow-sm" />)}</div> : filtered.length === 0 ? (
+        <div className="rounded-[var(--kf-radius-lg)] border border-[var(--kf-border)] bg-white px-5 py-8 text-center shadow-sm"><BookOpen className="mx-auto text-[var(--kf-text-subtle)]" size={30} /><h2 className="mt-2 font-semibold text-[var(--kf-text)]">Belum ada transaksi</h2><p className="mt-1 text-sm text-[var(--kf-text-muted)]">Coba ubah rentang tanggal atau catat transaksi baru.</p><button onClick={() => navigate("/catat")} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--kf-accent)] px-4 font-semibold text-white">Catat Transaksi <ArrowRight size={17} /></button></div>
+      ) : dates.map((date) => (
+        <section key={date} aria-label={dateLabel(date)}>
+          <h2 className="mb-2 px-1 text-sm font-semibold capitalize text-[var(--kf-text-muted)]">{dateLabel(date)}</h2>
+          <div className="overflow-hidden rounded-[var(--kf-radius-lg)] border border-[var(--kf-border)] bg-white shadow-sm">
+            <div className="hidden grid-cols-[minmax(7rem,1fr)_minmax(10rem,2fr)_minmax(6rem,1fr)_minmax(8rem,1fr)_auto] items-center gap-3 border-b border-[var(--kf-border)] bg-[var(--kf-surface-soft)] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--kf-text-subtle)] md:grid"><span>Tanggal</span><span>Transaksi</span><span>Pembayaran</span><span className="text-right">Nominal</span><span>Aksi</span></div>
+            {filtered.filter((tx) => tx.transaction_date === date).map((tx) => {
+              const income = tx.type === "income";
+              return <article key={tx.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-[var(--kf-border)] px-3 py-3 last:border-0 sm:px-4 md:grid-cols-[minmax(7rem,1fr)_minmax(10rem,2fr)_minmax(6rem,1fr)_minmax(8rem,1fr)_auto] md:gap-3">
+                <div className="hidden text-sm text-[var(--kf-text-muted)] md:block">{dateLabel(tx.transaction_date)}</div>
+                <div className="flex min-w-0 items-center gap-3"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${income ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>{income ? <ArrowDownLeft size={19} /> : <ArrowUpRight size={19} />}</span><div className="min-w-0"><p className="truncate font-semibold text-[var(--kf-text)]">{tx.note || (income ? "Pemasukan" : tx.category || "Pengeluaran")}</p><p className="truncate text-sm text-[var(--kf-text-muted)]">{income ? `${tx.category || "Pemasukan"} · ${paymentLabel(tx.payment_method)}` : `Pengeluaran · ${tx.category || "Pengeluaran"}`}</p><p className="text-xs text-[var(--kf-text-subtle)] md:hidden">{dateLabel(tx.transaction_date)}</p></div></div>
+                <div className="hidden text-sm text-[var(--kf-text-muted)] md:block">{income ? paymentLabel(tx.payment_method) : tx.payment_method === "cash" ? "Cash" : paymentLabel(tx.payment_method)}</div>
+                <p className={`text-right font-bold ${income ? "text-emerald-700" : "text-rose-700"}`}>{income ? "+" : "−"}{formatRupiah(tx.amount)}<span className="mt-0.5 block text-xs font-medium md:hidden">{income ? "Pemasukan" : "Pengeluaran"}</span></p>
+                <div className="col-span-2 flex justify-end gap-2 md:col-span-1">{deleteId === tx.id ? <><button onClick={() => handleDelete(tx.id)} className="min-h-10 rounded-lg bg-rose-600 px-3 text-sm font-semibold text-white">Hapus</button><button onClick={() => setDeleteSelection({ businessId: business.id, id: null })} className="min-h-10 rounded-lg px-3 text-sm">Batal</button></> : <><button aria-label={`Edit transaksi ${tx.note || tx.category || ""}`} onClick={() => navigate("/catat", { state: { transaction: tx } })} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-[var(--kf-accent-hover)] hover:bg-[var(--kf-accent-soft)]"><Pencil size={16} /> Edit</button><button aria-label={`Hapus transaksi ${tx.note || tx.category || ""}`} onClick={() => { setDeleteError(""); setDeleteSelection({ businessId: business?.id ?? null, id: tx.id }); }} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50"><Trash2 size={16} /> Hapus</button></>}</div>
+              </article>;
+            })}
           </div>
-        ) : transactions.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 text-center">
-            <AlertCircle className="mx-auto text-gray-300 mb-3" size={40} />
-            <p className="text-gray-400 font-medium">Belum ada transaksi</p>
-            <p className="text-gray-400 text-sm mt-1">
-              Mulai catat dari tab Catat
-            </p>
-          </div>
-        ) : (
-          sortedDates.map((date) => (
-            <div key={date}>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1 mb-2">
-                {formatTanggalGrup(date)}
-              </p>
-              <div className="flex flex-col gap-2">
-                {grouped[date].map((tx) => (
-                  <div
-                    key={tx.id}
-                    className="bg-white rounded-2xl px-4 py-3 shadow-sm border border-gray-100 flex items-center gap-3"
-                  >
-                    <div
-                      className={`p-2.5 rounded-xl shrink-0 ${tx.type === "income" ? "bg-green-100" : "bg-red-100"}`}
-                    >
-                      {tx.type === "income" ? (
-                        <TrendingUp size={18} className="text-green-600" />
-                      ) : (
-                        <TrendingDown size={18} className="text-red-500" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">
-                        {tx.note ||
-                          (tx.type === "income" ? "Pemasukan" : tx.category)}
-                      </p>
-                      {tx.category && (
-                        <span className="text-xs text-gray-400">
-                          {tx.category}
-                        </span>
-                      )}
-                      {tx.payment_method && (
-                        <span
-                          className={`text-xs px-1.5 py-0.5 rounded-md font-medium ml-1 ${
-                            tx.payment_method === "cash"
-                              ? "bg-green-50 text-green-600"
-                              : "bg-blue-50 text-blue-600"
-                          }`}
-                        >
-                          {tx.payment_method === "cash" ? "Cash" : "QRIS"}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p
-                        className={`font-bold text-sm ${tx.type === "income" ? "text-green-600" : "text-red-500"}`}
-                      >
-                        {tx.type === "income" ? "+" : "-"}
-                        {formatRupiah(tx.amount)}
-                      </p>
-                    </div>
-                    {deleteId === tx.id ? (
-                      <div className="flex gap-1 shrink-0">
-                        <button
-                          onClick={() => handleDelete(tx.id)}
-                          className="bg-red-500 text-white text-xs px-2 py-1 rounded-lg font-medium"
-                        >
-                          Hapus
-                        </button>
-                        <button
-                          onClick={() => setDeleteId(null)}
-                          className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-lg font-medium"
-                        >
-                          Batal
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setDeleteId(tx.id)}
-                        className="p-1.5 text-gray-300 hover:text-red-400 transition-colors shrink-0"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+        </section>
+      ))}
     </div>
   );
 }

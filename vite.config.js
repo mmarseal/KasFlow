@@ -9,26 +9,26 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon-192.png', 'icon-512.png'],
+      includeAssets: ['assets/favicon-48x48.png'],
       manifest: {
-        name: 'Kantin Dinda - Manajemen Keuangan',
-        short_name: 'Kantin Dinda',
-        description: 'Sistem pembukuan digital Kantin Dinda Gedung Ventura',
-        theme_color: '#16a34a',
-        background_color: '#ffffff',
+        name: 'KasFlow - Manajemen Keuangan',
+        short_name: 'KasFlow',
+        description: 'Sistem pencatatan keuangan untuk usaha.',
+        theme_color: '#087f68',
+        background_color: '#f5f7f6',
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
         start_url: '/',
         icons: [
           {
-            src: '/icon-192.png',
+            src: '/assets/kasflow-pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any maskable'
           },
           {
-            src: '/icon-512.png',
+            src: '/assets/kasflow-pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
@@ -36,20 +36,11 @@ export default defineConfig({
         ]
       },
       workbox: {
-        // Cache semua asset utama
+        // Cache semua asset statis utama
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        // Strategi: cache dulu, fallback ke network
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'supabase-cache',
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 },
-              networkTimeoutSeconds: 10,
-            }
-          }
-        ]
+        // Hindari runtime caching pada endpoint Supabase (Auth & Database REST)
+        // untuk menjamin kesegaran data finansial real-time dan mencegah kebocoran sesi/token.
+        runtimeCaching: []
       }
     })
   ],

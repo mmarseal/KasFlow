@@ -1,3 +1,5 @@
+import { parseLocalDate } from './dateUtils'
+
 export function formatRupiah(amount) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -7,7 +9,8 @@ export function formatRupiah(amount) {
 }
 
 export function formatTanggal(dateStr) {
-  return new Date(dateStr).toLocaleDateString('id-ID', {
+  if (!dateStr) return '-'
+  return parseLocalDate(dateStr).toLocaleDateString('id-ID', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',

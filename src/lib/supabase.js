@@ -7,9 +7,4 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables. Check your .env file.')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
-export async function getUserId() {
-  const { data: { user } } = await supabase.auth.getUser()
-  return user?.id
-}
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
