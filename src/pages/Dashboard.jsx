@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
-import { formatRupiah, formatTanggal } from "../utils/formatCurrency";
+import { formatRupiah } from "../utils/formatCurrency";
+import { getJakartaDashboardDateRange, getJakartaDateRangeDays } from "../utils/dateUtils";
+import { aggregateTransactionsByBuckets, filterTransactionsByDateRange, summarizeFinancialTransactions } from "../utils/dashboardAnalytics";
 import {
   ArrowDownLeft,
   ArrowRight,
@@ -26,9 +28,9 @@ import {
 } from "recharts";
 
 const PERIODS = [
-  { label: "Hari Ini", value: "today" },
   { label: "7 Hari Terakhir", value: "7days" },
   { label: "Bulan Ini", value: "month" },
+  { label: "3 Bulan Terakhir", value: "3months" },
 ];
 
 function jakartaParts(date = new Date()) {
@@ -47,21 +49,50 @@ function jakartaParts(date = new Date()) {
   );
 }
 
-function dateString({ year, month, day }) {
-  return `${year}-${month}-${day}`;
-}
-
-function shiftDate(date, days) {
-  const [year, month, day] = date.split("-").map(Number);
-  const shifted = new Date(Date.UTC(year, month - 1, day + days));
-  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
-}
-
 function shortDay(date) {
   const [year, month, day] = date.split("-").map(Number);
   return new Intl.DateTimeFormat("id-ID", { weekday: "short", timeZone: "UTC" })
     .format(new Date(Date.UTC(year, month - 1, day)))
     .replace(".", "");
+}
+
+function shortDate(date) {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+function longDate(date) {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+function formatAxisAmount(value) {
+  const amount = Number(value);
+  if (amount >= 1000000) return `${(amount / 1000000).toLocaleString("id-ID", { maximumFractionDigits: 1 })}jt`;
+  if (amount >= 1000) return `${(amount / 1000).toLocaleString("id-ID", { maximumFractionDigits: 1 })}rb`;
+  return amount.toLocaleString("id-ID");
+}
+
+function CashFlowTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const { date, endDate } = payload[0].payload;
+  const dateLabel = date === endDate ? longDate(date) : `${longDate(date)} – ${longDate(endDate)}`;
+
+  return (
+    <div className="max-w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-[var(--kf-border)] bg-white/95 px-3 py-2 shadow-[var(--kf-shadow-md)] backdrop-blur-sm">
+      <p className="mb-1.5 text-xs font-semibold text-[var(--kf-text)]">{dateLabel}</p>
+      <div className="flex flex-col gap-1">
+        {payload.map(({ name, value, color }) => (
+          <div key={name} className="flex items-center justify-between gap-4 text-xs">
+            <span className="flex items-center gap-1.5 text-[var(--kf-text-muted)]"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />{name}</span>
+            <span className="font-semibold tabular-nums text-[var(--kf-text)]">{formatRupiah(value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function greeting(hour) {
@@ -105,7 +136,6 @@ export default function Dashboard() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [result, setResult] = useState({ key: null, transactions: [], recentTransactions: [], periodError: null, recentError: null });
   const now = new Date();
-  const todayDate = dateString(jakartaParts(now));
   const currentHour = Number(jakartaParts(now).hour);
   const todayLabel = new Intl.DateTimeFormat("id-ID", {
     timeZone: "Asia/Jakarta",
@@ -114,10 +144,9 @@ export default function Dashboard() {
     month: "long",
     year: "numeric",
   }).format(now);
-  const monthStart = `${todayDate.slice(0, 7)}-01`;
-  const weekStart = shiftDate(todayDate, -6);
-  const queryStartDate = weekStart < monthStart ? weekStart : monthStart;
-  const key = JSON.stringify([businessId, refreshToken]);
+  const dateRange = getJakartaDashboardDateRange(period, now);
+  const queryStartDate = dateRange.start;
+  const key = JSON.stringify([businessId, period, dateRange.start, dateRange.end, refreshToken]);
 
   useEffect(() => {
     if (!businessId) return undefined;
@@ -131,7 +160,7 @@ export default function Dashboard() {
           .select("id, type, amount, transaction_date, payment_method, category, note, created_at")
           .eq("business_id", businessId)
           .gte("transaction_date", queryStartDate)
-          .lte("transaction_date", todayDate)
+          .lte("transaction_date", dateRange.end)
           .order("transaction_date", { ascending: false })
           .order("created_at", { ascending: false }),
           supabase
@@ -164,30 +193,35 @@ export default function Dashboard() {
 
     loadTransactions();
     return () => { active = false; };
-  }, [businessId, key, queryStartDate, todayDate]);
+  }, [businessId, key, queryStartDate, dateRange.end]);
 
   const current = businessId && result.key === key ? result : null;
   const transactions = current?.transactions ?? [];
   const loading = Boolean(businessId) && !current;
   const periodError = current?.periodError ?? null;
   const recentError = current?.recentError ?? null;
-  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => shiftDate(todayDate, index - 6)), [todayDate]);
-  const summaryRange = period === "today"
-    ? [todayDate, todayDate]
-    : period === "7days"
-      ? [shiftDate(todayDate, -6), todayDate]
-      : [monthStart, todayDate];
-  const summaryTransactions = transactions.filter((tx) => tx.transaction_date >= summaryRange[0] && tx.transaction_date <= summaryRange[1]);
-  const income = summaryTransactions.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
-  const expense = summaryTransactions.filter((tx) => tx.type === "expense").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+  const periodTransactions = filterTransactionsByDateRange(transactions, dateRange.start, dateRange.end);
+  const { income, expense } = summarizeFinancialTransactions(periodTransactions);
   const net = income - expense;
-  const chartData = days.map((date) => {
-    const dayTransactions = transactions.filter((tx) => tx.transaction_date === date);
+  const periodDates = useMemo(() => getJakartaDateRangeDays(dateRange.start, dateRange.end), [dateRange.start, dateRange.end]);
+  const chartBuckets = period === "3months"
+    ? Array.from({ length: Math.ceil(periodDates.length / 7) }, (_, index) => ({
+      start: periodDates[index * 7],
+      end: periodDates[Math.min((index + 1) * 7 - 1, periodDates.length - 1)],
+    }))
+    : periodDates.map((date) => ({ start: date, end: date }));
+  const chartData = aggregateTransactionsByBuckets(periodTransactions, chartBuckets).map(({ start, end, income: bucketIncome, expense: bucketExpense }) => {
+    const bucketLabel = period === "3months"
+      ? start.slice(0, 7) === end.slice(0, 7)
+        ? `${shortDate(start).replace(/\s+/g, " ")}–${Number(end.slice(-2))}`
+        : `${shortDate(start)}–${shortDate(end)}`
+      : period === "month" ? String(Number(start.slice(-2))) : shortDay(start);
     return {
-      date,
-      hari: shortDay(date),
-      Pemasukan: dayTransactions.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + Number(tx.amount || 0), 0),
-      Pengeluaran: dayTransactions.filter((tx) => tx.type === "expense").reduce((sum, tx) => sum + Number(tx.amount || 0), 0),
+      date: start,
+      endDate: end,
+      hari: bucketLabel,
+      Pemasukan: bucketIncome,
+      Pengeluaran: bucketExpense,
     };
   });
   const recentTransactions = current?.recentTransactions ?? [];
@@ -198,6 +232,7 @@ export default function Dashboard() {
     { label: "Pengeluaran", amount: expense, icon: TrendingDown, color: "text-rose-700", surface: "bg-rose-50", iconTone: "text-rose-700" },
     { label: "Selisih Bersih", amount: net, icon: Banknote, color: "text-teal-800", surface: "bg-teal-50", iconTone: "text-teal-800" },
   ];
+  const chartSubtitle = `Pemasukan dan pengeluaran · ${PERIODS.find(({ value }) => value === period)?.label.toLowerCase()} (${shortDate(dateRange.start)} – ${shortDate(dateRange.end)})`;
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-4 pb-4 md:gap-5">
@@ -207,7 +242,7 @@ export default function Dashboard() {
             <h1 className="text-2xl font-bold tracking-tight text-[var(--kf-text)] sm:text-3xl">
               {greeting(currentHour)}, {profileName} <span aria-hidden="true">👋</span>
             </h1>
-            <p className="mt-1 text-sm leading-6 text-[var(--kf-text-muted)] sm:text-base">Berikut ringkasan keuangan usaha Anda {period === "today" ? "hari ini" : period === "7days" ? "dalam 7 hari terakhir" : "bulan ini"}.</p>
+            <p className="mt-1 text-sm leading-6 text-[var(--kf-text-muted)] sm:text-base">Berikut ringkasan keuangan usaha Anda untuk {PERIODS.find(({ value }) => value === period)?.label.toLowerCase()}.</p>
           </div>
 
           <aside aria-label="Informasi hari ini" className="flex items-start gap-3 rounded-[var(--kf-radius-md)] border border-[var(--kf-border)] bg-white p-3 text-sm shadow-[var(--kf-shadow-card)] sm:p-4 lg:items-center">
@@ -225,27 +260,27 @@ export default function Dashboard() {
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold text-[var(--kf-text)]">Arus Kas</h2>
-              <p className="text-sm text-[var(--kf-text-muted)]">Pemasukan dan pengeluaran · 7 hari terakhir</p>
+              <p className="min-w-0 text-sm leading-5 text-[var(--kf-text-muted)]">{chartSubtitle}</p>
             </div>
             <button type="button" onClick={refresh} aria-label="Muat ulang transaksi" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--kf-radius-sm)] text-[var(--kf-text-muted)] transition hover:bg-[var(--kf-surface-soft)] hover:text-[var(--kf-text)]"><RefreshCw size={18} aria-hidden="true" /></button>
           </div>
           {loading ? <div className="h-56 animate-pulse rounded-xl bg-[var(--kf-surface-soft)]" /> : periodError ? (
             <p role="alert" className="flex min-h-32 items-center justify-center rounded-[var(--kf-radius-md)] bg-rose-50 px-5 text-center text-sm text-rose-700">Gagal memuat arus kas. Coba muat ulang.</p>
-          ) : transactions.length === 0 ? (
+          ) : periodTransactions.length === 0 ? (
             <div className="flex min-h-32 flex-col items-center justify-center rounded-[var(--kf-radius-md)] bg-[var(--kf-surface-soft)] px-5 py-4 text-center">
               <CalendarDays size={25} className="text-[var(--kf-text-subtle)]" aria-hidden="true" />
               <p className="mt-2 font-semibold text-[var(--kf-text)]">Belum ada transaksi</p>
-              <p className="mt-1 text-sm text-[var(--kf-text-muted)]">Arus kas tujuh hari akan muncul setelah transaksi dicatat.</p>
+              <p className="mt-1 text-sm text-[var(--kf-text-muted)]">Arus kas periode ini akan muncul setelah transaksi dicatat.</p>
             </div>
           ) : (
-            <div className="h-52 w-full" role="img" aria-label="Grafik pemasukan dan pengeluaran tujuh hari terakhir">
+            <div className="h-56 w-full min-w-0" role="img" aria-label={`Grafik pemasukan dan pengeluaran ${chartSubtitle}`}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} barGap={3} margin={{ top: 4, right: 4, left: 6, bottom: 0 }}>
+                <BarChart data={chartData} barGap={3} margin={{ top: 4, right: 4, left: 6, bottom: 6 }}>
                   <CartesianGrid vertical={false} stroke="#edf1ef" />
-                  <XAxis dataKey="hari" tick={{ fontSize: 12, fill: "#77837f" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: "#77837f" }} axisLine={false} tickLine={false} tickFormatter={(value) => value >= 1000000 ? `${(value / 1000000).toFixed(0)}jt` : value >= 1000 ? `${(value / 1000).toFixed(0)}rb` : value} width={68} />
-                  <Tooltip labelFormatter={(_, payload) => payload?.[0]?.payload?.date ? formatTanggal(payload[0].payload.date) : ""} formatter={(value, name) => [formatRupiah(value), name]} contentStyle={{ borderRadius: 12, border: "1px solid #e2e9e6", fontSize: 13, boxShadow: "0 8px 24px rgb(25 47 40 / 8%)" }} />
-                  <Legend wrapperStyle={{ fontSize: 13, paddingTop: 8 }} />
+                  <XAxis dataKey="hari" interval={period === "3months" ? 1 : period === "month" ? 3 : 0} minTickGap={period === "3months" ? 8 : 12} tickMargin={8} tick={{ fontSize: period === "3months" ? 10 : 12, fill: "#77837f" }} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, (dataMax) => dataMax > 0 ? Math.ceil(dataMax * 1.1) : 1]} tickCount={4} allowDecimals={false} tick={{ fontSize: 11, fill: "#77837f" }} axisLine={false} tickLine={false} tickFormatter={formatAxisAmount} width={68} />
+                  <Tooltip content={<CashFlowTooltip />} offset={8} wrapperStyle={{ outline: "none", zIndex: 20 }} />
+                  <Legend verticalAlign="bottom" iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, paddingTop: 4 }} />
                   <Bar dataKey="Pemasukan" fill="#0f8b70" radius={[5, 5, 0, 0]} maxBarSize={26} />
                   <Bar dataKey="Pengeluaran" fill="#d26464" radius={[5, 5, 0, 0]} maxBarSize={26} />
                 </BarChart>

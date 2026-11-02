@@ -65,7 +65,7 @@ function Sidebar() {
 export default function Layout() {
   const { user, business, signOut } = useAuth();
   const navigate = useNavigate();
-  const [period, setPeriod] = useState("today");
+  const [period, setPeriod] = useState("7days");
   const businessName = business?.name || "KasFlow";
 
   async function handleLogout() {

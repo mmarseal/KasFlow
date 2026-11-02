@@ -6,6 +6,9 @@ import {
   getStartOfMonth,
   getPastDaysArray,
   parseLocalDate,
+  getJakartaDateMonthsAgo,
+  getJakartaDashboardDateRange,
+  getJakartaDateRangeDays,
 } from '../src/utils/dateUtils.js'
 
 describe('Canonical Local Calendar Date Utility Tests', () => {
@@ -146,5 +149,21 @@ describe('Canonical Local Calendar Date Utility Tests', () => {
     // Contrast with the old bug: utcDate.toISOString().split('T')[0] was '2026-10-21'
     assert.equal(utcDate.toISOString().split('T')[0], '2026-10-21')
     assert.notEqual(jakartaDate, utcDate.toISOString().split('T')[0])
+  })
+
+  test('12. Dashboard ranges include both Jakarta calendar boundaries', () => {
+    const base = new Date('2026-10-22T17:30:00.000Z') // Oct 23, 00:30 WIB
+    assert.deepEqual(getJakartaDashboardDateRange('7days', base), { start: '2026-10-17', end: '2026-10-23' })
+    assert.deepEqual(getJakartaDashboardDateRange('month', base), { start: '2026-10-01', end: '2026-10-23' })
+    assert.deepEqual(getJakartaDashboardDateRange('3months', base), { start: '2026-07-23', end: '2026-10-23' })
+    assert.deepEqual(getJakartaDateRangeDays('2026-10-17', '2026-10-23'), [
+      '2026-10-17', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23',
+    ])
+  })
+
+  test('13. Three calendar months ago clamps safely at month ends and leap years', () => {
+    assert.equal(getJakartaDateMonthsAgo(3, new Date('2026-05-31T16:59:00.000Z')), '2026-02-28')
+    assert.equal(getJakartaDateMonthsAgo(3, new Date('2024-05-31T16:59:00.000Z')), '2024-02-29')
+    assert.equal(getJakartaDateMonthsAgo(3, new Date('2026-01-31T16:59:00.000Z')), '2025-10-31')
   })
 })

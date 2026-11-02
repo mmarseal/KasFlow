@@ -4,9 +4,9 @@ import { Banknote, ChevronDown, Download, FileDown, LogOut, Menu, Plus, Search, 
 import MobileNavigationDrawer from "./MobileNavigationDrawer";
 
 const PERIODS = [
-  { label: "Hari Ini", value: "today" },
   { label: "7 Hari Terakhir", value: "7days" },
   { label: "Bulan Ini", value: "month" },
+  { label: "3 Bulan Terakhir", value: "3months" },
 ];
 
 const SHORTCUTS = [

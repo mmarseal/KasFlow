@@ -41,6 +41,51 @@ export function getJakartaStartOfMonth(baseDate = new Date()) {
 }
 
 /**
+ * Get a date N calendar months before the Jakarta calendar date of baseDate.
+ * If the target month is shorter, clamp to its final day (for example, May 31
+ * minus three months is February 28 or 29).
+ * @param {number} months
+ * @param {Date} [baseDate=new Date()]
+ * @returns {string} YYYY-MM-DD
+ */
+export function getJakartaDateMonthsAgo(months, baseDate = new Date()) {
+  const { year, month, day } = getJakartaDateParts(baseDate)
+  const targetMonthDate = new Date(year, month - 1 - months, 1)
+  const targetYear = targetMonthDate.getFullYear()
+  const targetMonth = targetMonthDate.getMonth()
+  const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(Math.min(day, lastDayOfTargetMonth)).padStart(2, '0')}`
+}
+
+/**
+ * Build the inclusive date range used by the Dashboard in Asia/Jakarta.
+ * @param {'7days' | 'month' | '3months'} period
+ * @param {Date} [baseDate=new Date()]
+ * @returns {{start: string, end: string}}
+ */
+export function getJakartaDashboardDateRange(period, baseDate = new Date()) {
+  const end = formatJakartaDate(baseDate)
+  if (period === '7days') return { start: getJakartaDateDaysAgo(6, baseDate), end }
+  if (period === 'month') return { start: getJakartaStartOfMonth(baseDate), end }
+  if (period === '3months') return { start: getJakartaDateMonthsAgo(3, baseDate), end }
+  return { start: end, end }
+}
+
+/** Generate every inclusive Jakarta calendar date between YYYY-MM-DD values. */
+export function getJakartaDateRangeDays(start, end) {
+  const dates = []
+  const [startYear, startMonth, startDay] = start.split('-').map(Number)
+  const [endYear, endMonth, endDay] = end.split('-').map(Number)
+  const cursor = new Date(startYear, startMonth - 1, startDay)
+  const finalDate = new Date(endYear, endMonth - 1, endDay)
+  while (cursor <= finalDate) {
+    dates.push(formatLocalDate(cursor))
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return dates
+}
+
+/**
  * Get a local calendar date string offset by a number of days.
  * @param {number} days - Number of days to subtract (positive for past, negative for future)
  * @param {Date} [baseDate=new Date()]

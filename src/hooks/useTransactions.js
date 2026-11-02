@@ -1,22 +1,10 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/useAuth'
-import { formatJakartaDate, getJakartaDateDaysAgo, getJakartaStartOfMonth } from '../utils/dateUtils'
+import { getJakartaDashboardDateRange } from '../utils/dateUtils'
 
 function getDateRange(range) {
-  const today = formatJakartaDate()
-
-  if (range === 'today') return { start: today, end: today }
-
-  if (range === '7days' || range === 'week') {
-    return { start: getJakartaDateDaysAgo(6), end: today }
-  }
-
-  if (range === 'month') {
-    return { start: getJakartaStartOfMonth(), end: today }
-  }
-
-  return { start: today, end: today }
+  return getJakartaDashboardDateRange(range === 'week' ? '7days' : range)
 }
 
 /**
